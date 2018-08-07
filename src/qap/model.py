@@ -111,10 +111,13 @@ class GNN(nn.Module):
         return out[1]
 
 class Siamese_GNN(nn.Module):
-    def __init__(self, num_features, num_layers, J):
-        super(Siamese_GNN, self).__init__()
-        self.gnn = GNN(num_features, num_layers, J)
-
+    def __init__(self, num_features, num_layers, J, gnn = None):
+        if gnn is None:
+            super(Siamese_GNN, self).__init__()
+            self.gnn = GNN(num_features, num_layers, J)
+        else:
+            super(Siamese_GNN, self).__init__()
+            self.gnn = gnn
     def forward(self, g1, g2):
         emb1 = self.gnn(g1)
         emb2 = self.gnn(g2)

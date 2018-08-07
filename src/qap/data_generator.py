@@ -190,7 +190,7 @@ class Generator(object):
         if is_training:
             dataset = self.data_train
         else:
-            datatset = self.data_test
+            dataset = self.data_test
         for b in range(num_samples):
             if is_training:
                 ind = np.random.randint(0, len(dataset))
@@ -204,7 +204,7 @@ class Generator(object):
             x_noise = torch.from_numpy(dataset[ind]['x_noise'])
             WW_noise[b] = ww_noise
             X_noise[b] = x_noise
-        
+
         WW = Variable(WW, volatile=volatile)
         X = Variable(X, volatile=volatile)
         WW_noise = Variable(WW_noise, volatile=volatile)
