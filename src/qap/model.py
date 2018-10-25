@@ -156,6 +156,54 @@ class Gconv_new(nn.Module):
         x = x.view(*x_size[:-1], self.num_outputs)
         return W, x
 
+class gnn_atomic(nn.Module):
+    def __init__(self, feature_maps, J):
+        super(gnn_atomic, self).__init__()
+        self.num_inputs = J*feature_maps[0]
+        self.num_outputs = feature_maps[2]
+        self.fc1 = nn.Linear(self.num_inputs, self.num_outputs // 2)
+        self.fc2 = nn.Linear(self.num_inputs, self.num_outputs - self.num_outputs // 2)
+        self.bn2d = nn.BatchNorm2d(self.num_outputs)
+
+    def forward(self, WW, x):
+        # W = input[0]
+        # # print ('W size', W.size())
+        # # print ('x size', input[1].size())
+        # x = gmul(input) # out has size (bs, N, num_inputs)
+        x = GMul(WW, x)
+        x_size = x.size()
+        # print (x_size)
+        x = x.contiguous()
+        x = x.view(-1, self.num_inputs)
+        # print (x.size())
+        x1 = F.relu(self.fc1(x)) # has size (bs*N, num_outputs)
+        x2 = self.fc2(x)
+        x = torch.cat((x1, x2), 1)
+        # x = self.bn2d(x.unsqueeze(0).unsqueeze(3)).squeeze(3).squeeze(0)
+        x = self.bn2d(x)
+        # print (x.size())
+        x = x.view(*x_size[:-1], self.num_outputs)
+        return WW, x
+
+class gnn_atomic_final(nn.Module):
+    def __init__(self, feature_maps, J, n_classes):
+        super(gnn_atomic_final, self).__init__()
+        self.num_inputs = J*feature_maps[0]
+        self.num_outputs = n_classes
+        self.fc = nn.Linear(self.num_inputs, self.num_outputs)
+
+    def forward(self, WW, x):
+        x = GMul(WW, x) # out has size (bs, N, num_inputs)
+        x_size = x.size()
+        x = x.contiguous()
+        x = x.view(x_size[0]*x_size[1], -1)
+        x = self.fc(x) # has size (bs*N, num_outputs)
+        # x = F.tanh(x) # added for last layer
+        x = x.view(*x_size[:-1], self.num_outputs)
+        return WW, x
+
+
+
 class gnn_atomic_lg(nn.Module):
     def __init__(self, feature_maps, J):
         super(gnn_atomic_lg, self).__init__()
@@ -199,7 +247,8 @@ class gnn_atomic_lg(nn.Module):
 
         xy2x_l = self.fcx2x_2(x2x) + self.fcy2x_2(y2x)
         x_cat = torch.cat((xy2x, xy2x_l), 1)
-        x_output = self.bn2d_x(x_cat)
+        # x_output = self.bn2d_x(x_cat)
+        x_output = self.bn2d_x(x_cat.unsqueeze(2).unsqueeze(3)).squeeze(3).squeeze(2)
 
         x_output = x_output.view(*x2x_size[:-1], self.num_outputs)
 
@@ -225,7 +274,8 @@ class gnn_atomic_lg(nn.Module):
         xy2y_l = self.fcx2y_2(x2y) + self.fcy2y_2(y2y)
 
         y_cat = torch.cat((xy2y, xy2y_l), 1)
-        y_output = self.bn2d_y(y_cat)
+        # y_output = self.bn2d_x(y_cat)
+        y_output = self.bn2d_y(y_cat.unsqueeze(2).unsqueeze(3)).squeeze(3).squeeze(2)
 
         y_output = y_output.view(*y2y_size[:-1], self.num_outputs)
 
@@ -331,6 +381,29 @@ class GNN_bcd(nn.Module):
         for i in range(self.num_layers):
             cur = self._modules['layer{}'.format(i+1)](cur)
         out = self.layerlast(cur)
+        return out[1]
+
+class GNN_multiclass(nn.Module):
+    def __init__(self, num_features, num_layers, J, n_classes=2):
+        super(GNN_multiclass, self).__init__()
+        self.num_features = num_features
+        self.num_layers = num_layers
+        self.featuremap_in = [1, 1, num_features]
+        self.featuremap_mi = [num_features, num_features, num_features]
+        self.featuremap_end = [num_features, num_features, num_features]
+        # self.layer0 = Gconv(self.featuremap_in, J)
+        self.layer0 = gnn_atomic(self.featuremap_in, J)
+        for i in range(num_layers):
+            # module = Gconv(self.featuremap_mi, J)
+            module = gnn_atomic(self.featuremap_mi, J)
+            self.add_module('layer{}'.format(i + 1), module)
+        self.layerlast = gnn_atomic_final(self.featuremap_end, J, n_classes)
+
+    def forward(self, W, x):
+        cur = self.layer0(W, x)
+        for i in range(self.num_layers):
+            cur = self._modules['layer{}'.format(i+1)](*cur)
+        out = self.layerlast(*cur)
         return out[1]
 
 if __name__ == '__main__':
